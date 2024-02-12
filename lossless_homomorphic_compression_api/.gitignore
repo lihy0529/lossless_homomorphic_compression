@@ -1,2 +1,2 @@
-.build/
-.api.egg-info/
+build/
+api.egg-info/
