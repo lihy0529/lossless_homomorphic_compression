@@ -1,5 +1,5 @@
 import torch
-import my_all_reduce_api
+import api
 import threading
 import time
 import torch.distributed as dist   
@@ -23,7 +23,7 @@ port = 12345
 print("\nThis is a demo program to evaluate the aggregation throuput of our lossless homomorphic algorithm. ")
 print("The program will run two rounds of aggregation, the first round is on the baseline NCCL algorithm, and the second round is on our lossless homomorphic algorithm. ")
 print("\nThe meaning of parameters are shown below: ")
-print("world_size: The number of GPU machines. For example, world_size = 4 means the program uses four GPU machines. \033[91mYou should run all machines simultaneously with different machine_num.\033[0m ")
+print("world_size: The number of GPU machines. For example, world_size = 4 means the program uses four GPU machines. \033[93mYou should run all machines simultaneously with different machine_num.\033[0m ")
 print("machine_num: The rank of the current GPU machine. For example, if world_size = 4, machine_num is in {0, 1, 2, 3}. ")
 print("num_of_gpu: The number of GPUs in each GPU machine. For example, if num_of_gpu = 2, the program uses cuda:0 and cuda:1 on all GPU machines. ")
 print("data_size: The number of floating-point parameters of the generated data to be aggregated (each parameter takes 32 bits). ")
@@ -63,14 +63,14 @@ def aggregate(compression_ratio, gpu_num):
         index = torch.zeros(local_data.numel()//2, dtype=torch.uint8, device=device)
         count_sketch = torch.zeros(compressed_r * block_size, dtype=torch.float32, device=device)
         count_mapping = torch.zeros(compressed_r * block_size, dtype=torch.uint8, device=device)
-        my_all_reduce_api.torch_launch_create_index_4_bit(local_data, index, grid_size, block_size)
+        api.torch_launch_create_index_4_bit(local_data, index, grid_size, block_size)
 
         for i in range(num_of_gpu):
             if world_size == 1: break
             if i == gpu_num: dist.all_reduce(index, op=dist.ReduceOp.SUM, async_op=False)
             barrier.wait()
-        my_all_reduce_api.torch_launch_read_index_4_bit(local_data, index, grid_size, block_size)
-        my_all_reduce_api.torch_launch_compress_float_32(local_data, count_sketch, count_mapping, compressed_r, grid_size, block_size)
+        api.torch_launch_read_index_4_bit(local_data, index, grid_size, block_size)
+        api.torch_launch_compress_float_32(local_data, count_sketch, count_mapping, compressed_r, grid_size, block_size)
 
         for i in range(num_of_gpu):
             if world_size == 1: break
@@ -79,9 +79,9 @@ def aggregate(compression_ratio, gpu_num):
         flag = torch.ones(1, dtype=torch.int32, device=device)
         while flag[0] != 0:
             flag[0] = 0
-            my_all_reduce_api.torch_launch_decompress_float_32(local_data, count_sketch, count_mapping, compressed_r, grid_size, block_size, flag)
+            api.torch_launch_decompress_float_32(local_data, count_sketch, count_mapping, compressed_r, grid_size, block_size, flag)
         
-        my_all_reduce_api.torch_launch_estimate_float_32(local_data, count_sketch, compressed_r, grid_size, block_size)
+        api.torch_launch_estimate_float_32(local_data, count_sketch, compressed_r, grid_size, block_size)
     
     [shm[i][gpu_num * unit_size:(gpu_num+1) * unit_size].copy_(local_data.to('cuda:' + str(i))) for i in range(num_of_gpu) if i != gpu_num]
     barrier.wait()
@@ -95,8 +95,8 @@ def thread_function(shm, data_size, sparsity, compression_ratio, gpu_num):
     if gpu_num == 0: print("\n\nOriginal_data: ", data[0:20])
     for i in range(2):
         shm[gpu_num] = data.clone()
-        if i == 0 and gpu_num == 0: print("\n\n\033[91mNCCL Baseline:\033[0m ")
-        if i == 1 and gpu_num == 0: print("\n\n\033[91mOur Method: \033[0m")
+        if i == 0 and gpu_num == 0: print("\n\n\033[92mNCCL Baseline:\033[0m ")
+        if i == 1 and gpu_num == 0: print("\n\n\033[92mOur Method: \033[0m")
         
         barrier.wait()
         torch.cuda.synchronize(gpu_num)
@@ -107,7 +107,7 @@ def thread_function(shm, data_size, sparsity, compression_ratio, gpu_num):
         aggregate_time = end_aggregation-begin_aggregation
         if gpu_num == 0: 
             print("Aggregated data: ", shm[gpu_num][0:20])
-            print("Aggregation throughput (Gbps): \033[91m", data_size * 32 / aggregate_time, "\033[0m")
+            print("Aggregation throughput (Gbps): \033[92m", data_size * 32 / aggregate_time, "\033[0m")
     if gpu_num == 0: print("\033[93mNote that the aggregated data of NCCL baseline and our method should be similar. Otherwise it may because the compressed data size is too high. \033[0m")
 
 
